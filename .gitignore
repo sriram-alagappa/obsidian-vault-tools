@@ -1,0 +1,6 @@
+bin/
+*.o
+.DS_Store
+manifest.json
+out-*.jsonl
+sample.txt
