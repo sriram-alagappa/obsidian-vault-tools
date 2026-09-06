@@ -21,6 +21,13 @@ if [ "${1:-}" = "--uninstall" ]; then
   echo "  removed $LABEL"; exit 0
 fi
 
+# /usr/bin/python3 is a shim that execs Xcode's or the CLT's Python. TCC judges the
+# binary that actually runs, so the plist must name the resolved interpreter — and the
+# Full Disk Access grant must be applied to that same path.
+PY_CMD="${PYTHON:-$(command -v python3)}"
+PYBIN="$("$PY_CMD" -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null)"
+[ -x "$PYBIN" ] || { echo "  no usable python3 found"; exit 1; }
+
 VAULT="${OBSIDIAN_VAULT:-}"
 [ -n "$VAULT" ]            || { echo "  set OBSIDIAN_VAULT to the vault path"; exit 1; }
 [ -d "$VAULT/.obsidian" ]  || { echo "  $VAULT has no .obsidian/ — point at the vault itself"; exit 1; }
@@ -28,10 +35,16 @@ VAULT="${OBSIDIAN_VAULT:-}"
 
 # Pre-flight: launchd inherits no Full Disk Access. If we cannot list the vault
 # now, the agent will not be able to either — fail loudly rather than silently.
-if ! ls "$VAULT" >/dev/null 2>&1; then
-  echo "  cannot read $VAULT"
-  echo "  Grant Full Disk Access to /usr/bin/python3 and $REPO/bin/ocrshot"
-  echo "  (System Settings > Privacy & Security > Full Disk Access; use Cmd-Shift-G to type a path)"
+if ! "$PYBIN" -c "import os,sys; sys.exit(0 if os.listdir(sys.argv[1]) else 1)" "$VAULT" >/dev/null 2>&1; then
+  echo "  $PYBIN cannot read $VAULT"
+  echo
+  echo "  Grant Full Disk Access to BOTH of these exact paths:"
+  echo "    $PYBIN"
+  echo "    $REPO/bin/ocrshot"
+  echo
+  echo "  System Settings > Privacy & Security > Full Disk Access, then + and Cmd-Shift-G"
+  echo "  to type the path. Note the first one is the RESOLVED interpreter, not"
+  echo "  /usr/bin/python3 — that is only a shim and granting it has no effect."
   exit 1
 fi
 
@@ -44,7 +57,7 @@ cat > "$PLIST" <<PLIST_EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>$PYBIN</string>
     <string>$REPO/scripts/build_ocr.py</string>
     <string>$VAULT</string>
     <string>--quiet</string>
@@ -64,6 +77,7 @@ unload
 launchctl bootstrap "gui/$UID" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
 
 echo "  installed $LABEL"
+echo "    python   $PYBIN"
 echo "    vault    $VAULT"
 echo "    every    ${INTERVAL}s"
 echo "    log      $LOG"

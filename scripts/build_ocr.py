@@ -108,7 +108,14 @@ def mark_stale_summaries(vault):
         report(f"summaries: {changed} changed ({stale} stale, {fresh} current)")
 
 
-man = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
+try:
+    man = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
+    os.listdir(VAULT)
+except PermissionError:
+    sys.exit(f"cannot read {VAULT}\n"
+             f"Grant Full Disk Access to this interpreter:\n"
+             f"  {os.path.realpath(sys.executable)}\n"
+             f"and to {REPO / 'bin' / 'ocrshot'}")
 
 images = sorted(p for p in VAULT.rglob("*")
                 if p.suffix.lower() in EXT and p.is_file()

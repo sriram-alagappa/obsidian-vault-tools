@@ -77,8 +77,18 @@ A launchd agent then runs `build_ocr.py --quiet` every 30 seconds. An uneventful
 ```
 
 **launchd inherits no Full Disk Access.** The installer pre-flights this and refuses rather than
-installing a silently dead agent. If the vault is in iCloud, grant access to **`/usr/bin/python3`**
-*and* **`bin/ocrshot`** (Cmd-Shift-G in the file picker to type a path).
+installing a silently dead agent — it prints the two exact paths to grant.
+
+> ⚠️ **`/usr/bin/python3` is a shim.** It execs Xcode's or the Command Line Tools' Python, and
+> TCC judges the binary that actually runs. Granting Full Disk Access to `/usr/bin/python3` has
+> **no effect**. You must grant it to the *resolved* interpreter — something like
+> `/opt/homebrew/Cellar/python@3.14/3.14.5/.../bin/python3.14`. The installer resolves this and
+> bakes the real path into the plist so the two agree; run it and it will tell you exactly what
+> to grant.
+>
+> The resolved path contains a version number, so **a Python upgrade breaks both the grant and
+> the plist.** Re-run `install-agent.sh` afterwards and re-grant the new path. Symptom: the log
+> shows `cannot read <vault>`.
 
 ```bash
 INTERVAL=120 ./scripts/install-agent.sh     # slower poll
