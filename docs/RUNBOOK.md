@@ -62,6 +62,30 @@ python3 scripts/build_ocr.py
 Expect roughly: `images found: N`, `written: N-few`, `no-text: few`, `failed: 0`, ~70 s for 500
 images. Re-running immediately should report `to process: 0`.
 
+### 6. Install the watcher (optional but recommended)
+
+```bash
+./scripts/install-agent.sh
+```
+
+A launchd agent then runs `build_ocr.py --quiet` every 30 seconds. An uneventful pass costs
+~0.2 s and prints nothing, so `~/Library/Logs/obsidian-ocr.log` only ever records real work:
+
+```
+2026-09-06 16:55:45 OCR: 1 written, 0 no-text, 0 failed
+2026-09-06 16:55:45 summaries: 1 changed (1 stale, 36 current)
+```
+
+**launchd inherits no Full Disk Access.** The installer pre-flights this and refuses rather than
+installing a silently dead agent. If the vault is in iCloud, grant access to **`/usr/bin/python3`**
+*and* **`bin/ocrshot`** (Cmd-Shift-G in the file picker to type a path).
+
+```bash
+INTERVAL=120 ./scripts/install-agent.sh     # slower poll
+./scripts/install-agent.sh --uninstall      # remove
+launchctl print gui/$UID/com.user.obsidian-ocr | head -20
+```
+
 ---
 
 ## Day-to-day
@@ -88,7 +112,25 @@ and regenerate them.
 
 ### Refresh a folder summary
 
-Summaries are not automated. To redo one:
+Summaries are written by hand (or with an LLM); only **staleness detection** is automated. Every
+pass recomputes each summary's source digest and stamps its frontmatter:
+
+```yaml
+stale: true
+new_since_summary: 2      # screenshots added since the summary was written
+```
+
+Find what needs attention:
+
+```bash
+grep -rl '^stale: true' "$OBSIDIAN_VAULT/_Summaries"
+```
+
+Better, in Obsidian: a **Bases** view over `tags: [summary]` showing `source_folder`, `stale`,
+`new_since_summary` and `generated`, sorted with stale first. That turns "which summaries have
+drifted?" into a glance.
+
+To rewrite one:
 
 ```bash
 scripts/corpus.sh "Research" > /tmp/corpus.txt     # dump notes + OCR text
@@ -167,8 +209,7 @@ instead.
 
 Ranked by value:
 
-1. **launchd watcher** — OCR new pastes automatically instead of running the script by hand. Needs an FSEvents watcher plus Full Disk Access for the binary.
-2. **Summary staleness detection** — `build_ocr.py` already walks everything; it could recompute each folder's digest and stamp `stale: true` on summaries whose sources have drifted. Pair with an Obsidian Bases view over `tags: [summary]` to see what needs refreshing at a glance.
-3. **Move the vault out of iCloud** — would eliminate the Full Disk Access requirement, the placeholder problem and the security-software problem in one move. Cost: iOS Obsidian only syncs via iCloud or paid Obsidian Sync, so this means paying for Sync.
-4. **Fix any broken embeds the tidy surfaces** — a note referencing a filename that never existed will leave the real image classified as an orphan in `_Unfiled/`. Correct the embed, then move the file back.
-5. **Triage `_Unfiled/`** — 23 unreferenced screenshots; see the `_Summaries/_Unfiled.md` note for what they are.
+1. **Build the Bases view** — the `stale` and `new_since_summary` fields are populated; nothing consumes them yet.
+2. **Move the vault out of iCloud** — would eliminate the Full Disk Access requirement, the placeholder problem and the security-software problem in one move. Cost: iOS Obsidian only syncs via iCloud or paid Obsidian Sync, so this means paying for Sync.
+3. **Fix any broken embeds the tidy surfaces** — a note referencing a filename that never existed will leave the real image classified as an orphan in `_Unfiled/`. Correct the embed, then move the file back.
+4. **Triage `_Unfiled/`** — 23 unreferenced screenshots; see the `_Summaries/_Unfiled.md` note for what they are.

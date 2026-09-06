@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Walk a vault, OCR every image, write _OCR/<path>.ocr.md sidecars. Idempotent via manifest."""
 import json, os, re, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vaultlib import summary_digest, split_frontmatter, set_fm_field, drop_fm_field
 from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 
 REPO     = Path(__file__).resolve().parent.parent
-_arg     = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OBSIDIAN_VAULT", "")
+_args    = [a for a in sys.argv[1:] if not a.startswith("--")]
+_arg     = _args[0] if _args else os.environ.get("OBSIDIAN_VAULT", "")
 if not _arg.strip():
     sys.exit("usage: build_ocr.py <vault-path>   (or set OBSIDIAN_VAULT)")
 VAULT    = Path(_arg).expanduser()
@@ -23,6 +26,13 @@ MANIFEST = OUTROOT / ".ocr-manifest.json"   # per-vault: state travels with the 
 MINCHARS = 20
 EXT      = {".png", ".jpg", ".jpeg"}
 BATCH    = 60
+QUIET    = "--quiet" in sys.argv
+def say(msg):
+    if not QUIET:
+        print(msg)
+def report(msg):
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S ") if QUIET else ""
+    print(stamp + msg.strip(), flush=True)
 
 def is_ocr_note(p):  return "_OCR" in p.parts
 def is_config(p):    return ".obsidian" in p.parts
@@ -49,6 +59,54 @@ for note in VAULT.rglob("*.md"):
 def shortlink(rel_note):
     stem = os.path.basename(rel_note)
     return stem if notecount.get(stem, 0) == 1 else rel_note
+
+def mark_stale_summaries(vault):
+    """Recompute each summary's source digest; stamp stale:true/false in place.
+    Detection only — regenerating a summary is a judgement call, not a script."""
+    root = vault / "_Summaries"
+    if not root.is_dir():
+        return
+    stale = fresh = changed = 0
+    for path in sorted(root.rglob("*.md")):
+        text = path.read_text(errors="replace")
+        fm_text, body = split_frontmatter(text)
+        if not fm_text:
+            continue
+        fm = fm_text.split("\n")
+        folder = next((l.split(":", 1)[1].strip().strip('"')
+                       for l in fm if l.startswith("source_folder:")), None)
+        recorded = next((l.split(":", 1)[1].strip()
+                         for l in fm if l.startswith("sources_digest:")), None)
+        if folder is None or recorded is None:
+            continue
+        digest, n_notes, n_shots = summary_digest(str(vault), folder)
+        was = next((l.split(":", 1)[1].strip()
+                    for l in fm if l.startswith("source_shots:")), "0")
+        if digest == recorded:
+            fm = set_fm_field(fm, "stale", "false")
+            fm = drop_fm_field(fm, "new_since_summary")
+            fresh += 1
+        else:
+            fm = set_fm_field(fm, "stale", "true")
+            try:
+                delta = n_shots - int(was)
+            except ValueError:
+                delta = 0
+            if delta:
+                fm = set_fm_field(fm, "new_since_summary", delta)
+            else:
+                fm = drop_fm_field(fm, "new_since_summary")
+            stale += 1
+        rebuilt = "---\n" + "\n".join(fm) + "\n---\n" + body
+        if rebuilt != text:
+            tmp = path.with_suffix(".md.tmp")
+            tmp.write_text(rebuilt); os.replace(tmp, path)
+            changed += 1
+    # Only speak when a flag actually flipped — otherwise a single stale summary
+    # would log on every poll until someone rewrote it.
+    if changed:
+        report(f"summaries: {changed} changed ({stale} stale, {fresh} current)")
+
 
 man = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
 
@@ -80,13 +138,16 @@ for k in [k for k in man if k not in live]:
 for d in sorted((d for d in OUTROOT.rglob("*") if d.is_dir()), key=lambda x: -len(x.parts)):
     try: d.rmdir()
     except OSError: pass
-if reaped: print(f"  reaped  : {reaped} orphaned sidecars")
+if reaped: report(f"reaped {reaped} orphaned sidecars")
 
-print(f"  images found : {len(images)}")
-print(f"  linked from  : {len(backlinks)} distinct images referenced by notes")
-print(f"  up to date   : {len(images) - len(todo)}")
-print(f"  to process   : {len(todo)}")
-if not todo: sys.exit(0)
+say(f"  images found : {len(images)}")
+say(f"  linked from  : {len(backlinks)} distinct images referenced by notes")
+say(f"  up to date   : {len(images) - len(todo)}")
+say(f"  to process   : {len(todo)}")
+if not todo:
+    MANIFEST.write_text(json.dumps(man, indent=1, sort_keys=True))
+    mark_stale_summaries(VAULT)
+    sys.exit(0)
 
 t0, written, skipped, failed, linked = time.time(), 0, 0, 0, 0
 for i in range(0, len(todo), BATCH):
@@ -126,8 +187,9 @@ for i in range(0, len(todo), BATCH):
             tmp.write_text("\n".join(parts)); os.replace(tmp, dest)
             written += 1
         man[rel] = entry
-    print(f"  … {min(i+BATCH,len(todo))}/{len(todo)}  ({time.time()-t0:.0f}s)", flush=True)
+    say(f"  … {min(i+BATCH,len(todo))}/{len(todo)}  ({time.time()-t0:.0f}s)")
 
 MANIFEST.write_text(json.dumps(man, indent=1, sort_keys=True))
-print(f"\n  written : {written}  (with backlinks: {linked})\n  no-text : {skipped}\n  failed  : {failed}")
-print(f"  elapsed : {time.time()-t0:.1f}s")
+report(f"OCR: {written} written, {skipped} no-text, {failed} failed")
+mark_stale_summaries(VAULT)
+say(f"  elapsed : {time.time()-t0:.1f}s")

@@ -14,7 +14,7 @@ Three layers, only the first two of which are automated:
 |---|---|---|---|
 | Notes | your `.md` files | 144 | you |
 | **`_OCR/`** | one `.ocr.md` sidecar per image, with extracted text | 483 | **this tooling, automatically** |
-| **`_Summaries/`** | one prose summary per folder | 37 | an LLM, on demand |
+| **`_Summaries/`** | one prose summary per folder | 37 | an LLM on demand; **staleness flagged automatically** |
 
 OCR runs entirely on-device using Apple's Vision framework. **No network, no API key, no cost.**
 A full pass over 488 images takes ~70 seconds.
@@ -30,6 +30,12 @@ python3 scripts/build_ocr.py                  # OCR everything; idempotent
 That's it. Re-run any time — it only processes new or changed images, reaps sidecars whose
 image is gone, and leaves everything else alone.
 
+To stop running it by hand:
+
+```bash
+./scripts/install-agent.sh          # launchd agent, polls every 30s, ~0.2s per pass
+```
+
 ## The scripts
 
 | Script | Purpose |
@@ -39,6 +45,8 @@ image is gone, and leaves everything else alone.
 | `scripts/tidy_attachments.py` | Files each image next to the note that embeds it. **Dry-run by default** |
 | `scripts/corpus.sh` | Dumps one folder's notes + OCR text, for reading or summarising |
 | `scripts/write_summary.py` | Stamps frontmatter + digest onto a summary body and files it |
+| `scripts/install-agent.sh` | Installs/removes the launchd agent (`--uninstall`) |
+| `scripts/vaultlib.py` | Shared digest and frontmatter helpers |
 
 ## Documentation
 
@@ -55,5 +63,5 @@ image is gone, and leaves everything else alone.
 
 ## Status
 
-Working and in production against the live vault. Not yet automated — see
-[RUNBOOK § Not yet done](docs/RUNBOOK.md#not-yet-done).
+In production. OCR and staleness detection run unattended via launchd; writing summaries is
+still a deliberate act. Remaining ideas in [RUNBOOK § Not yet done](docs/RUNBOOK.md#not-yet-done).

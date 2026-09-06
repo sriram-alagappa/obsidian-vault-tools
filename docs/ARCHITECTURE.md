@@ -159,6 +159,19 @@ nothing can overwrite anything.
 <folder> <body.md>` stamps frontmatter — source counts and a **sources digest** (SHA-256 over
 sorted filename:size pairs) — and files the result at `_Summaries/<folder>.md`.
 
+### Staleness detection
+
+Every `build_ocr.py` run — including a no-op — recomputes each summary's digest from its current
+sources and rewrites the frontmatter in place: `stale: true|false`, plus `new_since_summary: N`
+counting screenshots added since the summary was written.
+
+The digest definition lives in `vaultlib.py` and is imported by both `write_summary.py` (which
+stamps it) and `build_ocr.py` (which checks it), so the two can't drift apart on what "changed"
+means.
+
+Reporting fires **only on transitions**. A summary that stays stale logs once, not once per poll
+— otherwise a single un-refreshed folder would fill the agent log forever.
+
 ### Why this layer is not automated
 
 OCR is a deterministic function: same pixels in, same text out, offline, free. A summary is
@@ -167,4 +180,22 @@ judgement — it needs a model, costs tokens, and means sending content somewher
 The digest exists so the *detection* can be automated even though the writing can't:
 `build_ocr.py` already walks every folder and could recompute each digest and stamp
 `stale: true` on drifted summaries. The vault would then tell you what's worth rewriting,
-without pretending the rewriting is free. Not built yet — see the runbook.
+without pretending the rewriting is free. Built: the flag is maintained automatically, the rewrite stays a judgement call.
+
+## The launchd agent
+
+`install-agent.sh` writes `~/Library/LaunchAgents/com.user.obsidian-ocr.plist` running
+`build_ocr.py <vault> --quiet` on a `StartInterval` (default 30 s), `LowPriorityIO`,
+`ProcessType Background`, logging to `~/Library/Logs/obsidian-ocr.log`.
+
+**Polling, not FSEvents.** A no-op pass measured **0.22 s**, so a 30-second poll costs well under
+1% of one core — cheaper in complexity than a bespoke watcher, and it self-heals after sleep,
+crashes or a missed event, which an event stream does not.
+
+`--quiet` suppresses the progress chatter and timestamps the rest, so the log records only real
+work. Combined with transition-only summary reporting, an idle vault produces an empty log
+indefinitely.
+
+The installer pre-flights readability of the vault, because **launchd inherits no Full Disk
+Access** — without the check, an agent against an iCloud vault would install cleanly and then do
+nothing forever.

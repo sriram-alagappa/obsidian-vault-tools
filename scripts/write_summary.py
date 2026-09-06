@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """write_summary.py <folder> <body-file> — stamps frontmatter + digest, writes _Summaries/<folder>.md"""
-import os, sys, glob, hashlib
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vaultlib import summary_digest
 _env = os.environ.get("OBSIDIAN_VAULT", "")
 if not _env.strip():
     sys.exit("set OBSIDIAN_VAULT to the vault path")
@@ -8,10 +10,7 @@ A = os.path.expanduser(_env)
 if not os.path.isdir(A):
     sys.exit(f"not a directory: {A}")
 folder, body = sys.argv[1], sys.argv[2]
-notes = sorted(glob.glob(f"{A}/{folder}/*.md"))
-shots = sorted(glob.glob(f"{A}/_OCR/{folder}/**/*.ocr.md", recursive=True))
-dig = hashlib.sha256("".join(f"{os.path.basename(p)}:{os.path.getsize(p)}"
-                             for p in notes + shots).encode()).hexdigest()[:16]
+dig, n_notes, n_shots = summary_digest(A, folder)
 fm = ("---\ngenerated: 2026-09-06\n"
       f'source_folder: "{folder}"\nsource_notes: {len(notes)}\nsource_shots: {len(shots)}\n'
       f"sources_digest: {dig}\nstale: false\ntags: [summary]\n---\n\n")
