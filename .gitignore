@@ -4,3 +4,5 @@ bin/
 manifest.json
 out-*.jsonl
 sample.txt
+__pycache__/
+*.pyc
