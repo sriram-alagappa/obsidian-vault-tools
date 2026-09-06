@@ -3,6 +3,8 @@
 Local, offline tooling that makes an Obsidian vault's **screenshots searchable** and keeps its
 **attachments tidy**.
 
+Why this exists: [**Your screenshots are a black hole**](https://medium.com/@sriram.alv/your-screenshots-are-a-black-hole-0ce87bfa317b) — the write-up.
+
 Built 2026-09-06 for the `My Vault` Obsidian vault, which held 144 notes and 486
 screenshots — where most of the actual content lived inside the images, unsearchable.
 
